@@ -15,6 +15,21 @@ counter.inc()
 println(registry.snapshot().toJson(pretty = true))
 ```
 
+Produces
+
+```text
+{
+  "points": [
+    {
+      "type": "counter",
+      "name": "hits",
+      "tags": {},
+      "count": 1
+    }
+  ]
+}
+```
+
 ### Micrometer on the JVM
 
 ```kotlin
@@ -23,6 +38,12 @@ val registry = MicrometerMeterRegistry(micrometer)
 val gauge = registry.gauge("temp")
 gauge.set(12.3)
 println(micrometer.get("temp").gauge().value())
+```
+
+Produces
+
+```text
+12.3
 ```
 
 ## Multi platform

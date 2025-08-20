@@ -40,6 +40,11 @@ val readmeMd =
                     val counter = registry.counter("hits")
                     counter.inc()
                     println(registry.snapshot().toJson(pretty = true))
+                }.let { out ->
+                    +"""
+                        Produces
+                    """.trimIndent()
+                    mdCodeBlock(out.stdOut, type = "text")
                 }
             }
             subSection("Micrometer on the JVM") {
@@ -49,6 +54,11 @@ val readmeMd =
                     val gauge = registry.gauge("temp")
                     gauge.set(12.3)
                     println(micrometer.get("temp").gauge().value())
+                }.let { out ->
+                    +"""
+                        Produces
+                    """.trimIndent()
+                    mdCodeBlock(out.stdOut, type = "text")
                 }
             }
         }
