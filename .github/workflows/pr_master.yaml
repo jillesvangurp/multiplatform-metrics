@@ -34,7 +34,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
-          add-job-summary: true
+          add-job-summary: always
 
       - name: Build with Gradle
         run: ./gradlew check
