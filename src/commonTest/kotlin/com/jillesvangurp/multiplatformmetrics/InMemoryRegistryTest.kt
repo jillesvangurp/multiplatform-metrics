@@ -1,7 +1,6 @@
 package com.jillesvangurp.multiplatformmetrics
 
 import io.kotest.matchers.collections.shouldContainExactly
-import io.kotest.matchers.doubles.shouldBeExactly
 import io.kotest.matchers.shouldBe
 import kotlin.test.Test
 
@@ -32,7 +31,7 @@ class InMemoryRegistryTest {
         val point = registry.snapshot().points.first()
         point.type shouldBe "gauge"
         point.name shouldBe "load"
-        point.value.shouldBeExactly(2.5)
+        point.value shouldBe 2.5
     }
 
     @Test
@@ -46,9 +45,9 @@ class InMemoryRegistryTest {
         point.type shouldBe "timer"
         point.name shouldBe "latency"
         point.count shouldBe 2
-        point.sumMs.shouldBeExactly(30.0)
-        point.minMs.shouldBeExactly(10.0)
-        point.maxMs.shouldBeExactly(20.0)
+        point.sumMs shouldBe 30.0
+        point.minMs shouldBe 10.0
+        point.maxMs shouldBe 20.0
     }
 
     @Test
