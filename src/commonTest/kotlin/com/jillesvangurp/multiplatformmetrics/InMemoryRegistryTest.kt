@@ -3,6 +3,7 @@ package com.jillesvangurp.multiplatformmetrics
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlin.test.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 class InMemoryRegistryTest {
     @Test
@@ -48,6 +49,54 @@ class InMemoryRegistryTest {
         point.sumMs shouldBe 30.0
         point.minMs shouldBe 10.0
         point.maxMs shouldBe 20.0
+    }
+
+    @Test
+    fun timerShouldRecordKotlinDurations() {
+        val registry = InMemoryRegistry()
+        val timer = registry.timer("latency")
+        timer.record(10.milliseconds)
+
+        val point = registry.snapshot().points.first()
+        point.count shouldBe 1
+        point.sumMs shouldBe 10.0
+    }
+
+    @Test
+    fun measureShouldRecordMetrics() {
+        val registry = InMemoryRegistry()
+
+        registry.measure("op") { }
+
+        try {
+            registry.measure("op") { error("boom") }
+        } catch (_: Throwable) {
+        }
+
+        val snapshot = registry.snapshot()
+        snapshot.points.count { it.name == "op.duration" } shouldBe 1
+        snapshot.points.first { it.name == "op.duration" }.count shouldBe 2
+        snapshot.points.first { it.name == "op.success" }.count shouldBe 1
+        snapshot.points.first { it.name == "op.total" }.count shouldBe 2
+        val failurePoint = snapshot.points.first { it.name == "op.failure" }
+        failurePoint.count shouldBe 1
+        failurePoint.tags["exception"] shouldBe "IllegalStateException"
+    }
+
+    @Test
+    fun measureResultShouldRecordMetrics() {
+        val registry = InMemoryRegistry()
+
+        registry.measureResult("res") { Result.success(Unit) }
+        registry.measureResult("res") { Result.failure<Unit>(IllegalArgumentException("fail")) }
+
+        val snapshot = registry.snapshot()
+        snapshot.points.first { it.name == "res.duration" }.count shouldBe 2
+        snapshot.points.first { it.name == "res.success" }.count shouldBe 1
+        val failurePoint = snapshot.points.first { it.name == "res.failure" }
+        failurePoint.count shouldBe 1
+        failurePoint.tags["exception"] shouldBe "IllegalArgumentException"
+        snapshot.points.first { it.name == "res.total" }.count shouldBe 2
     }
 
     @Test
