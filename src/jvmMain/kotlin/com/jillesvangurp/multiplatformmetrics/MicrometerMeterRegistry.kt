@@ -1,11 +1,12 @@
 package com.jillesvangurp.multiplatformmetrics
 
-import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Meter
+import io.micrometer.core.instrument.MeterRegistry
 import kotlinx.atomicfu.atomic
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 
+/** [IMeterRegistry] backed by Micrometer on the JVM. */
 class MicrometerMeterRegistry(private val registry: MeterRegistry) : IMeterRegistry {
     private fun tagArray(tags: Map<String, String>): Array<String> =
         tags.flatMap { listOf(it.key, it.value) }.toTypedArray()
@@ -54,6 +55,15 @@ class MicrometerMeterRegistry(private val registry: MeterRegistry) : IMeterRegis
         }
     }
 
+    override fun summary(name: String, tags: Map<String, String>): DistributionSummary {
+        val s = registry.summary(name, *tagArray(tags))
+        return object : DistributionSummary {
+            override fun record(amount: Double) {
+                s.record(amount)
+            }
+        }
+    }
+
     override fun snapshot(): MetricsSnapshot {
         val points = buildList {
             registry.forEachMeter { m ->
@@ -74,8 +84,19 @@ class MicrometerMeterRegistry(private val registry: MeterRegistry) : IMeterRegis
                             MetricPoint(
                                 "timer", m.id.name, tagsMap,
                                 count = snap.count(),
-                                sumMs = snap.total(TimeUnit.MILLISECONDS),
-                                maxMs = snap.max(TimeUnit.MILLISECONDS)
+                                sum = snap.total(TimeUnit.MILLISECONDS),
+                                max = snap.max(TimeUnit.MILLISECONDS)
+                            )
+                        )
+                    }
+                    Meter.Type.DISTRIBUTION_SUMMARY -> {
+                        val summary = registry.get(m.id.name).tags(m.id.tags).summary()
+                        add(
+                            MetricPoint(
+                                "summary", m.id.name, tagsMap,
+                                count = summary.count(),
+                                sum = summary.totalAmount(),
+                                max = summary.max()
                             )
                         )
                     }
