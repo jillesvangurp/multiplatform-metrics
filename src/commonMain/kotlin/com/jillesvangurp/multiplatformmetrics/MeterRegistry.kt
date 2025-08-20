@@ -4,14 +4,21 @@ package com.jillesvangurp.multiplatformmetrics
 
 import com.jillesvangurp.serializationext.DEFAULT_JSON
 import com.jillesvangurp.serializationext.DEFAULT_PRETTY_JSON
-import kotlin.time.TimeSource
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.getAndUpdate
 import kotlinx.serialization.Serializable
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.DurationUnit
+import kotlin.time.TimeSource
 
 interface Counter { fun inc(delta: Long = 1) }
 interface Gauge { fun set(value: Double) }
-interface Timer { fun <T> record(block: () -> T): T; fun record(durationMs: Long) }
+interface Timer {
+    fun <T> record(block: () -> T): T
+    fun record(duration: Duration)
+    fun record(durationMs: Long) = record(durationMs.milliseconds)
+}
 
 interface IMeterRegistry {
     fun counter(name: String, tags: Map<String, String> = emptyMap()): Counter
@@ -44,14 +51,14 @@ class SimpleMeterRegistry : IMeterRegistry {
     private val gauges   = mutableListOf<GaugeImpl>()
     private val timers   = mutableListOf<TimerImpl>()
 
-    override fun counter(name: String, tags: Map<String, String>) =
-        CounterImpl(name, tags).also { counters += it }
+        override fun counter(name: String, tags: Map<String, String>) =
+            counters.find { it.name == name && it.tags == tags } ?: CounterImpl(name, tags).also { counters += it }
 
-    override fun gauge(name: String, tags: Map<String, String>) =
-        GaugeImpl(name, tags).also { gauges += it }
+        override fun gauge(name: String, tags: Map<String, String>) =
+            gauges.find { it.name == name && it.tags == tags } ?: GaugeImpl(name, tags).also { gauges += it }
 
-    override fun timer(name: String, tags: Map<String, String>) =
-        TimerImpl(name, tags).also { timers += it }
+        override fun timer(name: String, tags: Map<String, String>) =
+            timers.find { it.name == name && it.tags == tags } ?: TimerImpl(name, tags).also { timers += it }
 
     override fun snapshot(): MetricsSnapshot = MetricsSnapshot(
         buildList {
@@ -81,17 +88,21 @@ class SimpleMeterRegistry : IMeterRegistry {
 
         override fun <T> record(block: () -> T): T {
             val mark = TimeSource.Monotonic.markNow()
-            try { return block() } finally {
-                record(mark.elapsedNow().inWholeMilliseconds)
+            try {
+                return block()
+            } finally {
+                record(mark.elapsedNow())
             }
         }
-        override fun record(durationMs: Long) {
+
+        override fun record(duration: Duration) {
             count.incrementAndGet()
-            val d = durationMs.toDouble()
+            val d = duration.toDouble(DurationUnit.MILLISECONDS)
             sumMs.getAndUpdate { it + d }
             minMs.getAndUpdate { kotlin.math.min(it, d) }
             maxMs.getAndUpdate { kotlin.math.max(it, d) }
         }
+
         fun point() = MetricPoint(
             "timer", name, tags,
             count = count.value, sumMs = sumMs.value,
