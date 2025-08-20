@@ -4,6 +4,27 @@ This is a kotlin multiplatform library for measuring things similar to platform 
 
 Note this is a work in progress and the API may evolve.
 
+## Examples
+
+### Simple meter registry
+
+```kotlin
+val registry = SimpleMeterRegistry()
+val counter = registry.counter("hits")
+counter.inc()
+println(registry.snapshot().toJson(pretty = true))
+```
+
+### Micrometer on the JVM
+
+```kotlin
+val micrometer = io.micrometer.core.instrument.simple.SimpleMeterRegistry()
+val registry = MicrometerMeterRegistry(micrometer)
+val gauge = registry.gauge("temp")
+gauge.set(12.3)
+println(micrometer.get("temp").gauge().value())
+```
+
 ## Multi platform
 
 This is a Kotlin multi platform library that should work on all kotlin platforms (jvm, js, wasm, native, ios, android, etc).

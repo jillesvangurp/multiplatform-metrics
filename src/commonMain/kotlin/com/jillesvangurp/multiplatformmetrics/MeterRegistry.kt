@@ -13,7 +13,7 @@ interface Counter { fun inc(delta: Long = 1) }
 interface Gauge { fun set(value: Double) }
 interface Timer { fun <T> record(block: () -> T): T; fun record(durationMs: Long) }
 
-interface MetricsRegistry {
+interface IMeterRegistry {
     fun counter(name: String, tags: Map<String, String> = emptyMap()): Counter
     fun gauge(name: String, tags: Map<String, String> = emptyMap()): Gauge
     fun timer(name: String, tags: Map<String, String> = emptyMap()): Timer
@@ -39,7 +39,7 @@ data class MetricsSnapshot(val points: List<MetricPoint>) {
         else DEFAULT_JSON.encodeToString(this)
 }
 
-class InMemoryRegistry : MetricsRegistry {
+class SimpleMeterRegistry : IMeterRegistry {
     private val counters = mutableListOf<CounterImpl>()
     private val gauges   = mutableListOf<GaugeImpl>()
     private val timers   = mutableListOf<TimerImpl>()
