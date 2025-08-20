@@ -46,9 +46,9 @@ class SimpleMeterRegistryTest {
         point.type shouldBe "timer"
         point.name shouldBe "latency"
         point.count shouldBe 2
-        point.sumMs shouldBe 30.0
-        point.minMs shouldBe 10.0
-        point.maxMs shouldBe 20.0
+        point.sum shouldBe 30.0
+        point.min shouldBe 10.0
+        point.max shouldBe 20.0
     }
 
     @Test
@@ -59,7 +59,7 @@ class SimpleMeterRegistryTest {
 
         val point = registry.snapshot().points.first()
         point.count shouldBe 1
-        point.sumMs shouldBe 10.0
+        point.sum shouldBe 10.0
     }
 
     @Test
@@ -105,9 +105,26 @@ class SimpleMeterRegistryTest {
         registry.counter("c").inc()
         registry.gauge("g").set(1.0)
         registry.timer("t").record(1)
+        registry.summary("s").record(1.0)
 
         val names = registry.snapshot().points.map { it.name }
-        names.shouldContainExactly("c", "g", "t")
+        names.shouldContainExactly("c", "g", "t", "s")
+    }
+
+    @Test
+    fun summaryShouldRecordSamples() {
+        val registry = SimpleMeterRegistry()
+        val summary = registry.summary("payload")
+        summary.record(10.0)
+        summary.record(5.0)
+
+        val point = registry.snapshot().points.first()
+        point.type shouldBe "summary"
+        point.name shouldBe "payload"
+        point.count shouldBe 2
+        point.sum shouldBe 15.0
+        point.min shouldBe 5.0
+        point.max shouldBe 10.0
     }
 }
 

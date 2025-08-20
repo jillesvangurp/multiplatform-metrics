@@ -2,6 +2,7 @@ package com.jillesvangurp.multiplatformmetrics
 
 import kotlin.time.TimeSource
 
+/** Measure [block] and emit metrics prefixed with [prefix]. Returns the result of [block]. */
 inline fun <T> IMeterRegistry.measure(
     prefix: String,
     tags: Map<String, String> = emptyMap(),
@@ -25,6 +26,7 @@ inline fun <T> IMeterRegistry.measure(
     }
 }
 
+/** Measure a [block] returning [Result] and emit metrics prefixed with [prefix]. Returns the [Result]. */
 inline fun <T> IMeterRegistry.measureResult(
     prefix: String,
     tags: Map<String, String> = emptyMap(),
