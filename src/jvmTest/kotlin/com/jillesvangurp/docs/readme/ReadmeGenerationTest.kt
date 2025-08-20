@@ -5,7 +5,7 @@ import java.io.File
 import kotlin.test.Test
 
 // FIXME adjust
-const val githubLink = "https://github.com/formation-res/pg-docstore"
+const val githubLink = "https://github.com/jillesvangurp/multiplatform-metrics"
 
 val sourceGitRepository =
     SourceRepository(
@@ -20,7 +20,7 @@ class ReadmeGenerationTest {
         File(".", "README.md")
             .writeText(
                 """
-                    # MyNewKmpProject
+                    # Multiplatform Metrics
         
                 """.trimIndent().trimMargin() +
                     "\n\n" +
@@ -33,24 +33,24 @@ val readmeMd =
     sourceGitRepository.md {
         includeMdFile("intro.md")
 
-        section("Example") {
-            +"""
-                This README uses [kotlin4example](https://github.com/jillesvangurp/kotlin4example) so you are all set up to show of your library with working examples.   
-            """
-                .trimIndent()
-            subSection("Hello World") {
-                example {
-                    // prints hello world
-                    println("Hello World!")
-                }.let {
-                        +"""
-                           You can actually grab the output and show it in another code block:
-                        """
-                            .trimIndent()
-
-                        mdCodeBlock(it.stdOut, type = "text")
-                    }
-            }
-        }
+//        section("Example") {
+//            +"""
+//                This README uses [kotlin4example](https://github.com/jillesvangurp/kotlin4example) so you are all set up to show of your library with working examples.
+//            """
+//                .trimIndent()
+//            subSection("Hello World") {
+//                example {
+//                    // prints hello world
+//                    println("Hello World!")
+//                }.let {
+//                        +"""
+//                           You can actually grab the output and show it in another code block:
+//                        """
+//                            .trimIndent()
+//
+//                        mdCodeBlock(it.stdOut, type = "text")
+//                    }
+//            }
+//        }
         includeMdFile("outro.md")
     }

@@ -14,7 +14,7 @@ plugins {
 
 // FIXME adjust as needed
 val ghUser = "jillesvangurp"
-val ghProjectName = "kmp-template"
+val ghProjectName = "multiplatform-metrics"
 
 repositories {
     mavenCentral()
@@ -72,6 +72,9 @@ kotlin {
         commonMain {
             dependencies {
                 implementation(kotlin("stdlib-common"))
+                api(KotlinX.serialization.json)
+                api("com.jillesvangurp:kotlinx-serialization-extensions:_")
+                api("org.jetbrains.kotlinx:atomicfu:_")
             }
         }
 
@@ -118,8 +121,8 @@ kotlin {
 
         all {
             languageSettings {
-                languageVersion = "1.9"
-                apiVersion = "1.9"
+                languageVersion = "2.0"
+                apiVersion = "2.0"
             }
             languageSettings.optIn("kotlin.RequiresOptIn")
         }
