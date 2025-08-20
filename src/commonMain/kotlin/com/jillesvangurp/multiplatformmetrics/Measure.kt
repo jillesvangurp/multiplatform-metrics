@@ -2,7 +2,7 @@ package com.jillesvangurp.multiplatformmetrics
 
 import kotlin.time.TimeSource
 
-inline fun <T> MetricsRegistry.measure(
+inline fun <T> IMeterRegistry.measure(
     prefix: String,
     tags: Map<String, String> = emptyMap(),
     block: () -> T
@@ -25,7 +25,7 @@ inline fun <T> MetricsRegistry.measure(
     }
 }
 
-inline fun <T> MetricsRegistry.measureResult(
+inline fun <T> IMeterRegistry.measureResult(
     prefix: String,
     tags: Map<String, String> = emptyMap(),
     block: () -> Result<T>

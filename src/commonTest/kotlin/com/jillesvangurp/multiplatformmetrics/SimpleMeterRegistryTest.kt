@@ -53,7 +53,7 @@ class SimpleMeterRegistryTest {
 
     @Test
     fun timerShouldRecordKotlinDurations() {
-        val registry = InMemoryRegistry()
+        val registry = SimpleMeterRegistry()
         val timer = registry.timer("latency")
         timer.record(10.milliseconds)
 
@@ -64,7 +64,7 @@ class SimpleMeterRegistryTest {
 
     @Test
     fun measureShouldRecordMetrics() {
-        val registry = InMemoryRegistry()
+        val registry = SimpleMeterRegistry()
 
         registry.measure("op") { }
 
@@ -85,7 +85,7 @@ class SimpleMeterRegistryTest {
 
     @Test
     fun measureResultShouldRecordMetrics() {
-        val registry = InMemoryRegistry()
+        val registry = SimpleMeterRegistry()
 
         registry.measureResult("res") { Result.success(Unit) }
         registry.measureResult("res") { Result.failure<Unit>(IllegalArgumentException("fail")) }

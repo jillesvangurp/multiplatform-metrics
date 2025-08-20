@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Meter
 import kotlinx.atomicfu.atomic
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration
 
 class MicrometerMeterRegistry(private val registry: MeterRegistry) : IMeterRegistry {
     private fun tagArray(tags: Map<String, String>): Array<String> =
@@ -41,6 +42,10 @@ class MicrometerMeterRegistry(private val registry: MeterRegistry) : IMeterRegis
                     val d = System.nanoTime() - start
                     t.record(d, TimeUnit.NANOSECONDS)
                 }
+            }
+
+            override fun record(duration: Duration) {
+                record(duration.inWholeMilliseconds)
             }
 
             override fun record(durationMs: Long) {
