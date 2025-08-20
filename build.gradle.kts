@@ -90,6 +90,7 @@ kotlin {
         jvmMain  {
             dependencies {
                 implementation(kotlin("stdlib-jdk8"))
+                api("io.micrometer:micrometer-core:_")
             }
         }
         jvmTest {

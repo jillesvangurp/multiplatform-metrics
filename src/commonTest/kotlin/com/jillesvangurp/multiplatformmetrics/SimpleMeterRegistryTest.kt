@@ -5,10 +5,10 @@ import io.kotest.matchers.shouldBe
 import kotlin.test.Test
 import kotlin.time.Duration.Companion.milliseconds
 
-class InMemoryRegistryTest {
+class SimpleMeterRegistryTest {
     @Test
     fun counterShouldRecordIncrements() {
-        val registry = InMemoryRegistry()
+        val registry = SimpleMeterRegistry()
         val counter = registry.counter("hits", mapOf("route" to "test"))
         counter.inc()
         counter.inc(2)
@@ -24,7 +24,7 @@ class InMemoryRegistryTest {
 
     @Test
     fun gaugeShouldRecordLastValue() {
-        val registry = InMemoryRegistry()
+        val registry = SimpleMeterRegistry()
         val gauge = registry.gauge("load")
         gauge.set(1.0)
         gauge.set(2.5)
@@ -37,7 +37,7 @@ class InMemoryRegistryTest {
 
     @Test
     fun timerShouldRecordDurations() {
-        val registry = InMemoryRegistry()
+        val registry = SimpleMeterRegistry()
         val timer = registry.timer("latency")
         timer.record(10)
         timer.record(20)
@@ -53,7 +53,7 @@ class InMemoryRegistryTest {
 
     @Test
     fun timerShouldRecordKotlinDurations() {
-        val registry = InMemoryRegistry()
+        val registry = SimpleMeterRegistry()
         val timer = registry.timer("latency")
         timer.record(10.milliseconds)
 
@@ -64,7 +64,7 @@ class InMemoryRegistryTest {
 
     @Test
     fun measureShouldRecordMetrics() {
-        val registry = InMemoryRegistry()
+        val registry = SimpleMeterRegistry()
 
         registry.measure("op") { }
 
@@ -85,7 +85,7 @@ class InMemoryRegistryTest {
 
     @Test
     fun measureResultShouldRecordMetrics() {
-        val registry = InMemoryRegistry()
+        val registry = SimpleMeterRegistry()
 
         registry.measureResult("res") { Result.success(Unit) }
         registry.measureResult("res") { Result.failure<Unit>(IllegalArgumentException("fail")) }
@@ -101,7 +101,7 @@ class InMemoryRegistryTest {
 
     @Test
     fun snapshotShouldContainAllMetrics() {
-        val registry = InMemoryRegistry()
+        val registry = SimpleMeterRegistry()
         registry.counter("c").inc()
         registry.gauge("g").set(1.0)
         registry.timer("t").record(1)
