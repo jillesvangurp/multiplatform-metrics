@@ -79,6 +79,31 @@ val readmeMd =
                       mdCodeBlock(out.stdOut, type = "text")
                   }
               }
+              subSection("OpenTelemetry JSON lines") {
+                  example {
+                      val registry = SimpleMeterRegistry()
+                      registry.counter("hits").inc()
+                      val line = registry.snapshot().toOpenTelemetryJsonLines().first()
+                      println((line.take(77) + "...").trim())
+                  }.let { out ->
+                      +"""
+                          Produces
+                      """.trimIndent()
+                      mdCodeBlock(out.stdOut, type = "text")
+                  }
+              }
+              subSection("Prometheus lines") {
+                  example {
+                      val registry = SimpleMeterRegistry()
+                      registry.counter("hits").inc()
+                      println(registry.snapshot().toPrometheusLines().joinToString("\n"))
+                  }.let { out ->
+                      +"""
+                          Produces
+                      """.trimIndent()
+                      mdCodeBlock(out.stdOut, type = "text")
+                  }
+              }
           }
           includeMdFile("outro.md")
       }

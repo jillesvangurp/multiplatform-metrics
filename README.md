@@ -94,6 +94,35 @@ Produces
 }
 ```
 
+### OpenTelemetry JSON lines
+
+```kotlin
+val registry = SimpleMeterRegistry()
+registry.counter("hits").inc()
+val line = registry.snapshot().toOpenTelemetryJsonLines().first()
+println((line.take(77) + "...").trim())
+```
+
+Produces
+
+```text
+{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"hits","sum":{"aggre...
+```
+
+### Prometheus lines
+
+```kotlin
+val registry = SimpleMeterRegistry()
+registry.counter("hits").inc()
+println(registry.snapshot().toPrometheusLines().joinToString("\n"))
+```
+
+Produces
+
+```text
+hits 1
+```
+
 ## Multi platform
 
 This is a Kotlin multi platform library that should work on all kotlin platforms (jvm, js, wasm, native, ios, android, etc).

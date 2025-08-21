@@ -5,6 +5,7 @@ package com.jillesvangurp.multiplatformmetrics
 import com.jillesvangurp.serializationext.DEFAULT_JSON
 import com.jillesvangurp.serializationext.DEFAULT_PRETTY_JSON
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.*
 
 /**
  * A distribution summary for tracking sampled amounts such as sizes.
@@ -56,5 +57,127 @@ data class MetricsSnapshot(val points: List<MetricPoint>) {
     fun toJson(pretty: Boolean = false): String =
         if (pretty) DEFAULT_PRETTY_JSON.encodeToString(this)
         else DEFAULT_JSON.encodeToString(this)
+
+    /** Export metrics as OpenTelemetry JSON lines. */
+    fun toOpenTelemetryJsonLines(): List<String> = points.map { it.toOpenTelemetryJsonLine() }
+
+    /** Export metrics in Prometheus text format. */
+    fun toPrometheusLines(): List<String> = points.flatMap { it.toPrometheusLines() }
+}
+
+private fun MetricPoint.toOpenTelemetryJsonLine(): String {
+    val attributes = buildJsonArray {
+        tags.forEach { (k, v) ->
+            add(
+                buildJsonObject {
+                    put("key", k)
+                    put("value", buildJsonObject { put("stringValue", v) })
+                }
+            )
+        }
+    }
+
+    val dataPoint = when (type) {
+        "counter" -> buildJsonObject {
+            if (attributes.isNotEmpty()) put("attributes", attributes)
+            count?.let { put("asDouble", it.toDouble()) }
+            put("startTimeUnixNano", "0")
+            put("timeUnixNano", "0")
+        }
+
+        "gauge" -> buildJsonObject {
+            if (attributes.isNotEmpty()) put("attributes", attributes)
+            value?.let { put("asDouble", it) }
+            put("startTimeUnixNano", "0")
+            put("timeUnixNano", "0")
+        }
+
+        else -> buildJsonObject {
+            if (attributes.isNotEmpty()) put("attributes", attributes)
+            value?.let { put("asDouble", it) }
+            count?.let { put("count", it) }
+            sum?.let { put("sum", it) }
+            min?.let { put("min", it) }
+            max?.let { put("max", it) }
+            put("startTimeUnixNano", "0")
+            put("timeUnixNano", "0")
+        }
+    }
+
+    val metric = buildJsonObject {
+        put("name", name)
+        when (type) {
+            "counter" -> put(
+                "sum",
+                buildJsonObject {
+                    put("aggregationTemporality", "AGGREGATION_TEMPORALITY_CUMULATIVE")
+                    put("isMonotonic", true)
+                    put("dataPoints", buildJsonArray { add(dataPoint) })
+                }
+            )
+
+            "gauge" -> put(
+                "gauge",
+                buildJsonObject { put("dataPoints", buildJsonArray { add(dataPoint) }) }
+            )
+
+            else -> put(
+                "summary",
+                buildJsonObject { put("dataPoints", buildJsonArray { add(dataPoint) }) }
+            )
+        }
+    }
+
+    val root = buildJsonObject {
+        put(
+            "resourceMetrics",
+            buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put(
+                            "scopeMetrics",
+                            buildJsonArray {
+                                add(
+                                    buildJsonObject {
+                                        put("metrics", buildJsonArray { add(metric) })
+                                    }
+                                )
+                            }
+                        )
+                    }
+                )
+            }
+        )
+    }
+
+    return DEFAULT_JSON.encodeToString(JsonObject.serializer(), root)
+}
+
+private fun MetricPoint.toPrometheusLines(): List<String> {
+    fun sanitize(s: String) = s.replace('.', '_')
+
+    fun formatTags(tags: Map<String, String>): String =
+        if (tags.isEmpty()) ""
+        else tags.toList().sortedBy { it.first }
+            .joinToString(",", prefix = "{", postfix = "}") { (k, v) -> "${sanitize(k)}=\"$v\"" }
+
+    val baseName = sanitize(name)
+    val tagString = formatTags(tags)
+    val lines = mutableListOf<String>()
+
+    when (type) {
+        "counter" -> count?.let { lines += "$baseName$tagString ${it.toString()}" }
+        "gauge" -> value?.let { lines += "$baseName$tagString ${it.toString()}" }
+        "timer", "summary" -> {
+            value?.let { lines += "$baseName$tagString ${it.toString()}" }
+            count?.let { lines += "${baseName}_count$tagString ${it.toString()}" }
+            sum?.let { lines += "${baseName}_sum$tagString ${it.toString()}" }
+            min?.let { lines += "${baseName}_min$tagString ${it.toString()}" }
+            max?.let { lines += "${baseName}_max$tagString ${it.toString()}" }
+        }
+        else -> value?.let { lines += "$baseName$tagString ${it.toString()}" }
+    }
+
+    return lines
 }
 
