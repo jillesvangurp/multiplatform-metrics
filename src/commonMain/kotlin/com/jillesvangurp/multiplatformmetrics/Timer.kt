@@ -10,7 +10,4 @@ interface Timer {
 
     /** Add an explicit [duration]. */
     fun record(duration: Duration)
-
-    /** Convenience for recording [durationMs] in milliseconds. */
-    fun record(durationMs: Long) = record(durationMs.milliseconds)
 }

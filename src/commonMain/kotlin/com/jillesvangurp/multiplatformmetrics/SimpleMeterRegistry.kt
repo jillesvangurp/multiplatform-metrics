@@ -9,20 +9,27 @@ import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.getAndUpdate
 
 /** In-memory implementation of [IMeterRegistry]. */
-class SimpleMeterRegistry : IMeterRegistry {
+class SimpleMeterRegistry(val timeSource: TimeSource = TimeSource.Monotonic) : IMeterRegistry {
     private val counters = mutableListOf<CounterImpl>()
     private val gauges = mutableListOf<GaugeImpl>()
     private val timers = mutableListOf<TimerImpl>()
     private val summaries = mutableListOf<SummaryImpl>()
 
     override fun counter(name: String, tags: Map<String, String>): Counter =
-        counters.find { it.name == name && it.tags == tags } ?: CounterImpl(name, tags).also { counters += it }
+        counters.find { it.name == name && it.tags == tags } ?: CounterImpl(
+            name = name,
+            tags = tags
+        ).also { counters += it }
 
     override fun gauge(name: String, tags: Map<String, String>): Gauge =
-        gauges.find { it.name == name && it.tags == tags } ?: GaugeImpl(name, tags).also { gauges += it }
+        gauges.find { it.name == name && it.tags == tags } ?: GaugeImpl(name = name, tags = tags).also { gauges += it }
 
     override fun timer(name: String, tags: Map<String, String>): Timer =
-        timers.find { it.name == name && it.tags == tags } ?: TimerImpl(name, tags).also { timers += it }
+        timers.find { it.name == name && it.tags == tags } ?: TimerImpl(
+            name = name,
+            tags = tags,
+            timeSource = timeSource
+        ).also { timers += it }
 
     override fun summary(name: String, tags: Map<String, String>): DistributionSummary =
         summaries.find { it.name == name && it.tags == tags } ?: SummaryImpl(name, tags).also { summaries += it }
@@ -48,14 +55,14 @@ class SimpleMeterRegistry : IMeterRegistry {
         fun point() = MetricPoint("gauge", name, tags, value = v.value)
     }
 
-    private class TimerImpl(val name: String, val tags: Map<String, String>) : Timer {
+    private class TimerImpl(val name: String, val tags: Map<String, String>, val timeSource: TimeSource) : Timer {
         private val count = atomic(0L)
         private val sumMs = atomic(0.0)
         private val minMs = atomic(Double.POSITIVE_INFINITY)
         private val maxMs = atomic(0.0)
 
         override fun <T> record(block: () -> T): T {
-            val mark = TimeSource.Monotonic.markNow()
+            val mark = timeSource.markNow()
             try {
                 return block()
             } finally {

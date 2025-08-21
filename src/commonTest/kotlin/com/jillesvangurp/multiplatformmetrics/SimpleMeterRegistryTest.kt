@@ -40,8 +40,8 @@ class SimpleMeterRegistryTest {
     fun timerShouldRecordDurations() {
         val registry = SimpleMeterRegistry()
         val timer = registry.timer("latency")
-        timer.record(10)
-        timer.record(20)
+        timer.record(10.milliseconds)
+        timer.record(20.milliseconds)
 
         val point = registry.snapshot().points.first()
         point.type shouldBe "timer"
@@ -105,7 +105,7 @@ class SimpleMeterRegistryTest {
         val registry = SimpleMeterRegistry()
         registry.counter("c").inc()
         registry.gauge("g").set(1.0)
-        registry.timer("t").record(1)
+        registry.timer("t").record(1.milliseconds)
         registry.summary("s").record(1.0)
 
         val names = registry.snapshot().points.map { it.name }
