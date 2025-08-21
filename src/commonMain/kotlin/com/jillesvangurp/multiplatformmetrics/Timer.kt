@@ -6,7 +6,7 @@ import kotlin.time.Duration.Companion.milliseconds
 /** A timer that records durations. */
 interface Timer {
     /** Record the execution time of [block] and returns its result. */
-    fun <T> record(block: () -> T): T
+    suspend fun <T> record(block: suspend () -> T): T
 
     /** Add an explicit [duration]. */
     fun record(duration: Duration)

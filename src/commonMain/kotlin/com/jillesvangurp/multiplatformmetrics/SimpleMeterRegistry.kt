@@ -61,7 +61,7 @@ class SimpleMeterRegistry(val timeSource: TimeSource = TimeSource.Monotonic) : I
         private val minMs = atomic(Double.POSITIVE_INFINITY)
         private val maxMs = atomic(0.0)
 
-        override fun <T> record(block: () -> T): T {
+        override suspend fun <T> record(block: suspend () -> T): T {
             val mark = timeSource.markNow()
             try {
                 return block()
