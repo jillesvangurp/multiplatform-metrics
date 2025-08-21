@@ -5,6 +5,8 @@ import io.kotest.matchers.shouldBe
 import kotlin.test.Test
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.test.runTest
+import com.jillesvangurp.serializationext.DEFAULT_JSON
+import kotlinx.serialization.json.*
 
 class SimpleMeterRegistryTest {
     @Test
@@ -148,6 +150,29 @@ class SimpleMeterRegistryTest {
         point.sum shouldBe 15.0
         point.min shouldBe 5.0
         point.max shouldBe 10.0
+    }
+
+    @Test
+    fun snapshotShouldExportOpenTelemetryJsonLines() {
+        val registry = SimpleMeterRegistry()
+        registry.counter("hits", mapOf("route" to "test")).inc(2)
+        val line = registry.snapshot().toOpenTelemetryJsonLines().first()
+        val json = DEFAULT_JSON.parseToJsonElement(line).jsonObject
+        val metric = json["resourceMetrics"]!!.jsonArray[0]
+            .jsonObject["scopeMetrics"]!!.jsonArray[0]
+            .jsonObject["metrics"]!!.jsonArray[0].jsonObject
+        metric["name"]!!.jsonPrimitive.content shouldBe "hits"
+        val dp = metric["sum"]!!.jsonObject["dataPoints"]!!.jsonArray[0].jsonObject
+        dp["asDouble"]!!.jsonPrimitive.double shouldBe 2.0
+        dp["attributes"]!!.jsonArray.first().jsonObject["key"]!!.jsonPrimitive.content shouldBe "route"
+    }
+
+    @Test
+    fun snapshotShouldExportPrometheusLines() {
+        val registry = SimpleMeterRegistry()
+        registry.counter("hits", mapOf("route" to "test")).inc(2)
+        val line = registry.snapshot().toPrometheusLines().first()
+        line shouldBe "hits{route=\"test\"} 2"
     }
 }
 
