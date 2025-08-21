@@ -2,11 +2,16 @@ package com.jillesvangurp.multiplatformmetrics
 
 import kotlin.time.TimeSource
 
-/** Measure [block] and emit metrics prefixed with [prefix]. Returns the result of [block]. */
-inline fun <T> IMeterRegistry.measure(
+/**
+ * Measure [block] and emit metrics prefixed with [prefix]. Returns the result of [block].
+ *
+ * [block] is suspending because it makes sense to use co-routines for long running operations
+ * in Kotlin that need measuring.
+ * */
+suspend inline fun <T> IMeterRegistry.measure(
     prefix: String,
     tags: Map<String, String> = emptyMap(),
-    block: () -> T
+    block: suspend () -> T
 ): T {
     val mark = TimeSource.Monotonic.markNow()
     return try {
@@ -26,11 +31,16 @@ inline fun <T> IMeterRegistry.measure(
     }
 }
 
-/** Measure a [block] returning [Result] and emit metrics prefixed with [prefix]. Returns the [Result]. */
-inline fun <T> IMeterRegistry.measureResult(
+/**
+ * Measure a [block] returning [Result] and emit metrics prefixed with [prefix]. Returns the [Result].
+ *
+ * [block] is suspending because it makes sense to use co-routines for long running operations
+ * in Kotlin that need measuring.
+ */
+suspend inline fun <T> IMeterRegistry.measureResult(
     prefix: String,
     tags: Map<String, String> = emptyMap(),
-    block: () -> Result<T>
+    block: suspend () -> Result<T>
 ): Result<T> {
     val mark = TimeSource.Monotonic.markNow()
     val result = try {

@@ -2,9 +2,9 @@ package com.jillesvangurp.multiplatformmetrics
 
 import io.micrometer.core.instrument.Meter
 import io.micrometer.core.instrument.MeterRegistry
-import kotlinx.atomicfu.atomic
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
+import kotlinx.atomicfu.atomic
 
 /** [IMeterRegistry] backed by Micrometer on the JVM. */
 class MicrometerMeterRegistry(private val registry: MeterRegistry) : IMeterRegistry {

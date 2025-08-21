@@ -4,6 +4,7 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlin.test.Test
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.test.runTest
 
 class SimpleMeterRegistryTest {
     @Test
@@ -63,7 +64,7 @@ class SimpleMeterRegistryTest {
     }
 
     @Test
-    fun measureShouldRecordMetrics() {
+    fun measureShouldRecordMetrics() = runTest {
         val registry = SimpleMeterRegistry()
 
         registry.measure("op") { }
@@ -84,7 +85,7 @@ class SimpleMeterRegistryTest {
     }
 
     @Test
-    fun measureResultShouldRecordMetrics() {
+    fun measureResultShouldRecordMetrics() = runTest {
         val registry = SimpleMeterRegistry()
 
         registry.measureResult("res") { Result.success(Unit) }
@@ -100,7 +101,7 @@ class SimpleMeterRegistryTest {
     }
 
     @Test
-    fun snapshotShouldContainAllMetrics() {
+    fun snapshotShouldContainAllMetrics() = runTest {
         val registry = SimpleMeterRegistry()
         registry.counter("c").inc()
         registry.gauge("g").set(1.0)
