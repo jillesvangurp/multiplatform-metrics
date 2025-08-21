@@ -22,8 +22,12 @@ interface IMeterRegistry {
     /** Create or retrieve a [Gauge] named [name] with optional [tags]. */
     fun gauge(name: String, tags: Map<String, String> = emptyMap()): Gauge
 
-    /** Create or retrieve a [Timer] named [name] with optional [tags]. */
-    fun timer(name: String, tags: Map<String, String> = emptyMap()): Timer
+    /** Create or retrieve a [Timer] named [name] with optional [tags] and [config]. */
+    fun timer(
+        name: String,
+        tags: Map<String, String> = emptyMap(),
+        config: TimerConfig = TimerConfig()
+    ): Timer
 
     /** Create or retrieve a [DistributionSummary] named [name] with optional [tags]. */
     fun summary(name: String, tags: Map<String, String> = emptyMap()): DistributionSummary

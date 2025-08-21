@@ -1,7 +1,6 @@
 package com.jillesvangurp.multiplatformmetrics
 
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 
 /** A timer that records durations. */
 interface Timer {
@@ -11,3 +10,9 @@ interface Timer {
     /** Add an explicit [duration]. */
     fun record(duration: Duration)
 }
+
+/** Configuration for [Timer] percentiles and SLA boundaries. */
+data class TimerConfig(
+    val percentiles: List<Double> = emptyList(),
+    val sla: List<Duration> = emptyList()
+)

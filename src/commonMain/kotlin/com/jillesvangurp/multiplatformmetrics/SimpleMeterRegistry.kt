@@ -1,5 +1,6 @@
 package com.jillesvangurp.multiplatformmetrics
 
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.time.Duration
@@ -24,11 +25,16 @@ class SimpleMeterRegistry(val timeSource: TimeSource = TimeSource.Monotonic) : I
     override fun gauge(name: String, tags: Map<String, String>): Gauge =
         gauges.find { it.name == name && it.tags == tags } ?: GaugeImpl(name = name, tags = tags).also { gauges += it }
 
-    override fun timer(name: String, tags: Map<String, String>): Timer =
+    override fun timer(
+        name: String,
+        tags: Map<String, String>,
+        config: TimerConfig
+    ): Timer =
         timers.find { it.name == name && it.tags == tags } ?: TimerImpl(
             name = name,
             tags = tags,
-            timeSource = timeSource
+            timeSource = timeSource,
+            config = config
         ).also { timers += it }
 
     override fun summary(name: String, tags: Map<String, String>): DistributionSummary =
@@ -38,7 +44,7 @@ class SimpleMeterRegistry(val timeSource: TimeSource = TimeSource.Monotonic) : I
         buildList {
             counters.forEach { add(it.point()) }
             gauges.forEach { add(it.point()) }
-            timers.forEach { add(it.point()) }
+            timers.forEach { addAll(it.points()) }
             summaries.forEach { add(it.point()) }
         }
     )
@@ -55,7 +61,18 @@ class SimpleMeterRegistry(val timeSource: TimeSource = TimeSource.Monotonic) : I
         fun point() = MetricPoint("gauge", name, tags, value = v.value)
     }
 
-    private class TimerImpl(val name: String, val tags: Map<String, String>, val timeSource: TimeSource) : Timer {
+    private class TimerImpl(
+        val name: String,
+        val tags: Map<String, String>,
+        val timeSource: TimeSource,
+        config: TimerConfig
+    ) : Timer {
+        private val percentiles = config.percentiles
+        private val slaDurations = config.sla
+        private val slaMs = slaDurations.map { it.toDouble(DurationUnit.MILLISECONDS) }
+        private val slaCounts = IntArray(slaDurations.size)
+        private val measurements = if (percentiles.isNotEmpty()) mutableListOf<Double>() else null
+
         private val count = atomic(0L)
         private val sumMs = atomic(0.0)
         private val minMs = atomic(Double.POSITIVE_INFINITY)
@@ -76,14 +93,55 @@ class SimpleMeterRegistry(val timeSource: TimeSource = TimeSource.Monotonic) : I
             sumMs.getAndUpdate { it + d }
             minMs.getAndUpdate { min(it, d) }
             maxMs.getAndUpdate { max(it, d) }
+            measurements?.add(d)
+            if (slaMs.isNotEmpty()) {
+                slaMs.forEachIndexed { index, bound ->
+                    if (d <= bound) {
+                        slaCounts[index]++
+                    }
+                }
+            }
         }
 
-        fun point() = MetricPoint(
-            "timer", name, tags,
-            count = count.value, sum = sumMs.value,
-            min = if (count.value > 0) minMs.value else 0.0,
-            max = maxMs.value
-        )
+        fun points(): List<MetricPoint> {
+            val base = MetricPoint(
+                "timer", name, tags,
+                count = count.value, sum = sumMs.value,
+                min = if (count.value > 0) minMs.value else 0.0,
+                max = maxMs.value
+            )
+            val extra = buildList {
+                if (measurements != null && measurements.isNotEmpty()) {
+                    val sorted = measurements.sorted()
+                    val size = sorted.size
+                    percentiles.forEach { p ->
+                        val rank = ceil(p * size).toInt().coerceIn(1, size) - 1
+                        val v = sorted[rank]
+                        add(
+                            MetricPoint(
+                                "timer",
+                                name,
+                                tags + ("percentile" to p.toString()),
+                                value = v
+                            )
+                        )
+                    }
+                }
+                if (slaDurations.isNotEmpty()) {
+                    slaDurations.forEachIndexed { index, d ->
+                        add(
+                            MetricPoint(
+                                "timer",
+                                name,
+                                tags + ("sla" to d.inWholeMilliseconds.toString()),
+                                count = slaCounts[index].toLong()
+                            )
+                        )
+                    }
+                }
+            }
+            return listOf(base) + extra
+        }
     }
 
     private class SummaryImpl(val name: String, val tags: Map<String, String>) : DistributionSummary {
