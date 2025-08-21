@@ -33,8 +33,19 @@ class MicrometerMeterRegistry(private val registry: MeterRegistry) : IMeterRegis
         }
     }
 
-    override fun timer(name: String, tags: Map<String, String>): Timer {
-        val t = registry.timer(name, *tagArray(tags))
+    override fun timer(
+        name: String,
+        tags: Map<String, String>,
+        config: TimerConfig
+    ): Timer {
+        val builder = io.micrometer.core.instrument.Timer.builder(name).tags(*tagArray(tags))
+        if (config.percentiles.isNotEmpty()) {
+            builder.publishPercentiles(*config.percentiles.toDoubleArray())
+        }
+        if (config.sla.isNotEmpty()) {
+            builder.sla(*config.sla.map { it.toJavaDuration() }.toTypedArray())
+        }
+        val t = builder.register(registry)
         return object : Timer {
             override suspend fun <T> record(block: suspend () -> T): T {
                 val start = System.nanoTime()

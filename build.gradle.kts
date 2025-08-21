@@ -78,14 +78,15 @@ kotlin {
             }
         }
 
-        commonTest {
-            dependencies {
-                implementation(kotlin("test"))
-                implementation(kotlin("test-common"))
-                implementation(kotlin("test-annotations-common"))
-                implementation("io.kotest:kotest-assertions-core:_")
-            }
-        }
+          commonTest {
+              dependencies {
+                  implementation(kotlin("test"))
+                  implementation(kotlin("test-common"))
+                  implementation(kotlin("test-annotations-common"))
+                  implementation("io.kotest:kotest-assertions-core:_")
+                  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:_")
+              }
+          }
 
         jvmMain  {
             dependencies {

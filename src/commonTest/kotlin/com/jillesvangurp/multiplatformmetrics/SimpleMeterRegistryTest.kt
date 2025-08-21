@@ -64,6 +64,28 @@ class SimpleMeterRegistryTest {
     }
 
     @Test
+    fun timerShouldCalculatePercentiles() {
+        val registry = SimpleMeterRegistry()
+        val timer = registry.timer("latency", config = TimerConfig(percentiles = listOf(0.5, 0.9)))
+        listOf(10, 20, 30, 40, 50).forEach { timer.record(it.milliseconds) }
+        val points = registry.snapshot().points.filter { it.name == "latency" }
+        points.first { it.tags["percentile"] == "0.5" }.value shouldBe 30.0
+        points.first { it.tags["percentile"] == "0.9" }.value shouldBe 50.0
+    }
+
+    @Test
+    fun timerShouldTrackSlaCounts() {
+        val registry = SimpleMeterRegistry()
+        val timer = registry.timer("latency", config = TimerConfig(sla = listOf(20.milliseconds, 40.milliseconds)))
+        timer.record(10.milliseconds)
+        timer.record(30.milliseconds)
+        timer.record(50.milliseconds)
+        val points = registry.snapshot().points.filter { it.tags.containsKey("sla") }
+        points.first { it.tags["sla"] == "20" }.count shouldBe 1
+        points.first { it.tags["sla"] == "40" }.count shouldBe 2
+    }
+
+    @Test
     fun measureShouldRecordMetrics() = runTest {
         val registry = SimpleMeterRegistry()
 
