@@ -1,6 +1,5 @@
 package com.jillesvangurp.multiplatformmetrics
 
-import io.micrometer.core.instrument.Meter
 import io.micrometer.core.instrument.MeterRegistry
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
@@ -74,41 +73,85 @@ class MicrometerMeterRegistry(private val registry: MeterRegistry) : IMeterRegis
 
     override fun snapshot(): MetricsSnapshot {
         val points = buildList {
-            registry.forEachMeter { m ->
-                val tagsMap = m.id.tags.associate { it.key to it.value }
-                when (m.id.type) {
-                    Meter.Type.COUNTER -> {
-                        val c = registry.get(m.id.name).tags(m.id.tags).counter()
-                        add(MetricPoint("counter", m.id.name, tagsMap, count = c.count().toLong()))
-                    }
-                    Meter.Type.GAUGE -> {
-                        val g = registry.get(m.id.name).tags(m.id.tags).gauge()
-                        add(MetricPoint("gauge", m.id.name, tagsMap, value = g.value()))
-                    }
-                    Meter.Type.TIMER -> {
-                        val timer = registry.get(m.id.name).tags(m.id.tags).timer()
-                        val snap = timer.takeSnapshot()
-                        add(
-                            MetricPoint(
-                                "timer", m.id.name, tagsMap,
-                                count = snap.count(),
-                                sum = snap.total(TimeUnit.MILLISECONDS),
-                                max = snap.max(TimeUnit.MILLISECONDS)
+            registry.forEachMeter { meter ->
+                val tagsMap = meter.id.tags.associate { it.key to it.value }
+                try {
+                    when (meter) {
+                        is io.micrometer.core.instrument.Counter -> {
+                            add(
+                                MetricPoint(
+                                    "counter",
+                                    meter.id.name,
+                                    tagsMap,
+                                    count = meter.count().toLong()
+                                )
                             )
-                        )
-                    }
-                    Meter.Type.DISTRIBUTION_SUMMARY -> {
-                        val summary = registry.get(m.id.name).tags(m.id.tags).summary()
-                        add(
-                            MetricPoint(
-                                "summary", m.id.name, tagsMap,
-                                count = summary.count(),
-                                sum = summary.totalAmount(),
-                                max = summary.max()
+                        }
+
+                        is io.micrometer.core.instrument.FunctionCounter -> {
+                            add(
+                                MetricPoint(
+                                    "counter",
+                                    meter.id.name,
+                                    tagsMap,
+                                    count = meter.count().toLong()
+                                )
                             )
-                        )
+                        }
+
+                        is io.micrometer.core.instrument.Gauge -> {
+                            add(MetricPoint("gauge", meter.id.name, tagsMap, value = meter.value()))
+                        }
+
+                        is io.micrometer.core.instrument.Timer -> {
+                            val s = meter.takeSnapshot()
+                            add(
+                                MetricPoint(
+                                    "timer", meter.id.name, tagsMap,
+                                    count = s.count(),
+                                    sum = s.total(TimeUnit.MILLISECONDS),
+                                    max = s.max(TimeUnit.MILLISECONDS)
+                                )
+                            )
+                        }
+
+                        is io.micrometer.core.instrument.FunctionTimer -> {
+                            add(
+                                MetricPoint(
+                                    "timer", meter.id.name, tagsMap,
+                                    count = meter.count().toLong(),
+                                    sum = meter.totalTime(TimeUnit.MILLISECONDS)
+                                    // FunctionTimer doesn't track max; leave it null
+                                )
+                            )
+                        }
+
+                        is io.micrometer.core.instrument.DistributionSummary -> {
+                            add(
+                                MetricPoint(
+                                    "summary", meter.id.name, tagsMap,
+                                    count = meter.count(),
+                                    sum = meter.totalAmount(),
+                                    max = meter.max()
+                                )
+                            )
+                        }
+
+                        is io.micrometer.core.instrument.LongTaskTimer -> {
+                            add(
+                                MetricPoint(
+                                    "long_task_timer", meter.id.name, tagsMap,
+                                    count = meter.activeTasks().toLong(),
+                                    sum = meter.duration(TimeUnit.MILLISECONDS)
+                                )
+                            )
+                        }
+
+                        else -> {
+                           // Skip for now
+                        }
                     }
-                    else -> {}
+                } catch (_: Throwable) { /* ignore */
                 }
             }
         }
