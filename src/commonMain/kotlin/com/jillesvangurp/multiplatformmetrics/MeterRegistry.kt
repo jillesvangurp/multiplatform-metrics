@@ -175,6 +175,10 @@ private fun MetricPoint.toPrometheusLines(): List<String> {
             min?.let { lines += "${baseName}_min$tagString ${it.toString()}" }
             max?.let { lines += "${baseName}_max$tagString ${it.toString()}" }
         }
+        "long_task_timer" -> {
+            count?.let { lines += "${baseName}_count$tagString ${it.toString()}" }
+            sum?.let { lines += "${baseName}_sum$tagString ${it.toString()}" }
+        }
         else -> value?.let { lines += "$baseName$tagString ${it.toString()}" }
     }
 
