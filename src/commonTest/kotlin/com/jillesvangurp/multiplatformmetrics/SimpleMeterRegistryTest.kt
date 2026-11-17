@@ -4,6 +4,7 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlin.test.Test
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.microseconds
 import kotlinx.coroutines.test.runTest
 import com.jillesvangurp.serializationext.DEFAULT_JSON
 import kotlinx.serialization.json.*
@@ -73,6 +74,37 @@ class SimpleMeterRegistryTest {
         val points = registry.snapshot().points.filter { it.name == "latency" }
         points.first { it.tags["percentile"] == "0.5" }.value shouldBe 30.0
         points.first { it.tags["percentile"] == "0.9" }.value shouldBe 50.0
+    }
+
+    @Test
+    fun percentilesUseOnlyTheLatestSamplesWhileTotalsStayCumulative() {
+        val registry = SimpleMeterRegistry()
+        val config = TimerConfig(percentiles = listOf(0.5), sla = listOf(2.milliseconds))
+        val timer = registry.timer("latency", config = config)
+        repeat(1_024) { timer.record(1.milliseconds) }
+        repeat(1_024) { timer.record(10.milliseconds) }
+
+        val (total, percentile, sla) = registry.snapshot().points
+        total.count shouldBe 2_048L
+        total.sum shouldBe 11_264.0
+        percentile.value shouldBe 10.0
+        sla.count shouldBe 1_024L
+    }
+
+    @Test
+    fun registrationCopiesMutableTags() {
+        val registry = SimpleMeterRegistry()
+        val tags = mutableMapOf("region" to "us", "route" to "old")
+        val first = registry.counter("hits", tags)
+        first.inc()
+        val originalSnapshot = registry.snapshot()
+        tags["route"] = "new"
+        registry.counter("hits", tags).inc(2)
+        registry.counter("hits", mapOf("route" to "old", "region" to "us")).inc(3)
+
+        originalSnapshot.points.single().tags["route"] shouldBe "old"
+        registry.snapshot().points.associate { it.tags["route"] to it.count } shouldBe
+            mapOf("old" to 4L, "new" to 2L)
     }
 
     @Test
@@ -155,24 +187,72 @@ class SimpleMeterRegistryTest {
     @Test
     fun snapshotShouldExportOpenTelemetryJsonLines() {
         val registry = SimpleMeterRegistry()
-        registry.counter("hits", mapOf("route" to "test")).inc(2)
-        val line = registry.snapshot().toOpenTelemetryJsonLines().first()
-        val json = DEFAULT_JSON.parseToJsonElement(line).jsonObject
-        val metric = json["resourceMetrics"]!!.jsonArray[0]
-            .jsonObject["scopeMetrics"]!!.jsonArray[0]
-            .jsonObject["metrics"]!!.jsonArray[0].jsonObject
+        registry.counter("hits", mapOf("route" to "test")).inc(9_007_199_254_740_993L)
+        val snapshot = registry.snapshot()
+        val line = snapshot.toOpenTelemetryJsonLines().single()
+        val metric = exportedMetric(line)
         metric["name"]!!.jsonPrimitive.content shouldBe "hits"
-        val dp = metric["sum"]!!.jsonObject["dataPoints"]!!.jsonArray[0].jsonObject
-        dp["asDouble"]!!.jsonPrimitive.double shouldBe 2.0
+        val sum = metric["sum"]!!.jsonObject
+        sum["aggregationTemporality"] shouldBe JsonPrimitive(2)
+        sum["isMonotonic"] shouldBe JsonPrimitive(true)
+        val dp = sum["dataPoints"]!!.jsonArray.single().jsonObject
+        dp["asInt"] shouldBe JsonPrimitive("9007199254740993")
+        (dp["timeUnixNano"]!!.jsonPrimitive.long > 0) shouldBe true
         dp["attributes"]!!.jsonArray.first().jsonObject["key"]!!.jsonPrimitive.content shouldBe "route"
+        snapshot.toOpenTelemetryJsonLines().single() shouldBe line
+    }
+
+    @Test
+    fun otlpTimerExportsQuantilesWithTheirSeriesAndSlaAsCounters() {
+        val registry = SimpleMeterRegistry()
+        val config = TimerConfig(
+            percentiles = listOf(0.9, 0.5),
+            sla = listOf(250.microseconds, 750.microseconds)
+        )
+        val first = registry.timer("latency", mapOf("route" to "first"), config)
+        first.record(250.microseconds)
+        first.record(750.microseconds)
+        registry.timer("latency", mapOf("route" to "second"), config).record(2.milliseconds)
+
+        val metrics = registry.snapshot().toOpenTelemetryJsonLines().map(::exportedMetric)
+        val summaries = metrics.filter { it["name"] == JsonPrimitive("latency") }
+        summaries.size shouldBe 2
+        summaries.forEach { it["unit"] shouldBe JsonPrimitive("ms") }
+        val data = summaries.map { it.getValue("summary").jsonObject.getValue("dataPoints").jsonArray.single().jsonObject }
+        data.map { it.getValue("count") } shouldBe listOf(JsonPrimitive("2"), JsonPrimitive("1"))
+        data.first()["sum"] shouldBe JsonPrimitive(1.0)
+        data.first()["min"] shouldBe null
+        data.first()["asDouble"] shouldBe null
+        val quantiles = data.map { it.getValue("quantileValues").jsonArray.map { q -> q.jsonObject } }
+        quantiles[0].map { it.getValue("quantile").jsonPrimitive.double } shouldBe listOf(0.5, 0.9)
+        quantiles[0].map { it.getValue("value").jsonPrimitive.double } shouldBe listOf(0.25, 0.75)
+        quantiles[1].map { it.getValue("value").jsonPrimitive.double } shouldBe listOf(2.0, 2.0)
+
+        val sla = metrics.filter { it["name"] == JsonPrimitive("latency.sla") }.map {
+            it.getValue("sum").jsonObject.getValue("dataPoints").jsonArray.single().jsonObject
+        }
+        sla.map { it.getValue("asInt").jsonPrimitive.long } shouldBe listOf(1L, 2L, 0L, 0L)
+        sla.map { point ->
+            val label = point.getValue("attributes").jsonArray.first { it.jsonObject["key"] == JsonPrimitive("sla") }
+            label.jsonObject.getValue("value").jsonObject.getValue("stringValue").jsonPrimitive.content
+        } shouldBe listOf("0.25", "0.75", "0.25", "0.75")
+        (data + sla).map { it.getValue("timeUnixNano") }.distinct().size shouldBe 1
     }
 
     @Test
     fun snapshotShouldExportPrometheusLines() {
         val registry = SimpleMeterRegistry()
-        registry.counter("hits", mapOf("route" to "test")).inc(2)
-        val line = registry.snapshot().toPrometheusLines().first()
-        line shouldBe "hits{route=\"test\"} 2"
+        val route = "a\"b\\c\nd"
+        registry.counter("hits", mapOf("route" to route)).inc(2)
+        val line = registry.snapshot().toPrometheusLines().single()
+        line shouldBe """hits{route="a\"b\\c\nd"} 2"""
+        val quotedLabel = line.substringAfter("route=").substringBeforeLast("}")
+        DEFAULT_JSON.parseToJsonElement(quotedLabel).jsonPrimitive.content shouldBe route
     }
+
+    private fun exportedMetric(line: String): JsonObject =
+        DEFAULT_JSON.parseToJsonElement(line).jsonObject.getValue("resourceMetrics").jsonArray.single()
+            .jsonObject.getValue("scopeMetrics").jsonArray.single()
+            .jsonObject.getValue("metrics").jsonArray.single().jsonObject
 }
 

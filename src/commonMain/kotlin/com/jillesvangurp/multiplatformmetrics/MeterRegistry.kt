@@ -1,11 +1,10 @@
-// commonMain
-@file:OptIn(ExperimentalStdlibApi::class)
 package com.jillesvangurp.multiplatformmetrics
 
 import com.jillesvangurp.serializationext.DEFAULT_JSON
 import com.jillesvangurp.serializationext.DEFAULT_PRETTY_JSON
+import kotlin.time.Clock
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.*
+import kotlinx.serialization.Transient
 
 /**
  * A distribution summary for tracking sampled amounts such as sizes.
@@ -53,113 +52,36 @@ data class MetricPoint(
 /** Collection of [MetricPoint]s. */
 @Serializable
 data class MetricsSnapshot(val points: List<MetricPoint>) {
+    @Transient
+    private val capturedAt = Clock.System.now()
+
     /** Serialize this snapshot to JSON. Returns the JSON string. */
     fun toJson(pretty: Boolean = false): String =
         if (pretty) DEFAULT_PRETTY_JSON.encodeToString(this)
         else DEFAULT_JSON.encodeToString(this)
 
-    /** Export metrics as OpenTelemetry JSON lines. */
-    fun toOpenTelemetryJsonLines(): List<String> = points.map { it.toOpenTelemetryJsonLine() }
+    /** Export one OTLP/HTTP JSON request per line using this snapshot's capture time. */
+    fun toOpenTelemetryJsonLines(): List<String> {
+        val epochNanos = capturedAt.epochSeconds * 1_000_000_000 + capturedAt.nanosecondsOfSecond
+        return OpenTelemetryExporter(epochNanos).export(points)
+    }
 
-    /** Export metrics in Prometheus text format. */
+    /** Export Prometheus samples. Join the lines with `\n` and end the scrape with a final newline. */
     fun toPrometheusLines(): List<String> = points.flatMap { it.toPrometheusLines() }
-}
-
-private fun MetricPoint.toOpenTelemetryJsonLine(): String {
-    val attributes = buildJsonArray {
-        tags.forEach { (k, v) ->
-            add(
-                buildJsonObject {
-                    put("key", k)
-                    put("value", buildJsonObject { put("stringValue", v) })
-                }
-            )
-        }
-    }
-
-    val dataPoint = when (type) {
-        "counter" -> buildJsonObject {
-            if (attributes.isNotEmpty()) put("attributes", attributes)
-            count?.let { put("asDouble", it.toDouble()) }
-            put("startTimeUnixNano", "0")
-            put("timeUnixNano", "0")
-        }
-
-        "gauge" -> buildJsonObject {
-            if (attributes.isNotEmpty()) put("attributes", attributes)
-            value?.let { put("asDouble", it) }
-            put("startTimeUnixNano", "0")
-            put("timeUnixNano", "0")
-        }
-
-        else -> buildJsonObject {
-            if (attributes.isNotEmpty()) put("attributes", attributes)
-            value?.let { put("asDouble", it) }
-            count?.let { put("count", it) }
-            sum?.let { put("sum", it) }
-            min?.let { put("min", it) }
-            max?.let { put("max", it) }
-            put("startTimeUnixNano", "0")
-            put("timeUnixNano", "0")
-        }
-    }
-
-    val metric = buildJsonObject {
-        put("name", name)
-        when (type) {
-            "counter" -> put(
-                "sum",
-                buildJsonObject {
-                    put("aggregationTemporality", "AGGREGATION_TEMPORALITY_CUMULATIVE")
-                    put("isMonotonic", true)
-                    put("dataPoints", buildJsonArray { add(dataPoint) })
-                }
-            )
-
-            "gauge" -> put(
-                "gauge",
-                buildJsonObject { put("dataPoints", buildJsonArray { add(dataPoint) }) }
-            )
-
-            else -> put(
-                "summary",
-                buildJsonObject { put("dataPoints", buildJsonArray { add(dataPoint) }) }
-            )
-        }
-    }
-
-    val root = buildJsonObject {
-        put(
-            "resourceMetrics",
-            buildJsonArray {
-                add(
-                    buildJsonObject {
-                        put(
-                            "scopeMetrics",
-                            buildJsonArray {
-                                add(
-                                    buildJsonObject {
-                                        put("metrics", buildJsonArray { add(metric) })
-                                    }
-                                )
-                            }
-                        )
-                    }
-                )
-            }
-        )
-    }
-
-    return DEFAULT_JSON.encodeToString(JsonObject.serializer(), root)
 }
 
 private fun MetricPoint.toPrometheusLines(): List<String> {
     fun sanitize(s: String) = s.replace('.', '_')
 
+    fun escapeLabel(value: String) = value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+
     fun formatTags(tags: Map<String, String>): String =
         if (tags.isEmpty()) ""
         else tags.toList().sortedBy { it.first }
-            .joinToString(",", prefix = "{", postfix = "}") { (k, v) -> "${sanitize(k)}=\"$v\"" }
+            .joinToString(",", prefix = "{", postfix = "}") { (k, v) -> "${sanitize(k)}=\"${escapeLabel(v)}\"" }
 
     val baseName = sanitize(name)
     val tagString = formatTags(tags)

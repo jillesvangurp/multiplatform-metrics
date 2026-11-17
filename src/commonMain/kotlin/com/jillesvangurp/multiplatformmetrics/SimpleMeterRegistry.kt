@@ -1,82 +1,86 @@
 package com.jillesvangurp.multiplatformmetrics
 
 import kotlin.math.ceil
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.time.Duration
 import kotlin.time.DurationUnit
 import kotlin.time.TimeSource
 import kotlinx.atomicfu.atomic
-import kotlinx.atomicfu.getAndUpdate
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 
-/** In-memory implementation of [IMeterRegistry]. */
+private const val PERCENTILE_WINDOW_SIZE = 1_024
+
+/** In-memory implementation of [IMeterRegistry] with thread-safe registration and recording. */
 class SimpleMeterRegistry(val timeSource: TimeSource = TimeSource.Monotonic) : IMeterRegistry {
-    private val counters = mutableListOf<CounterImpl>()
-    private val gauges = mutableListOf<GaugeImpl>()
-    private val timers = mutableListOf<TimerImpl>()
-    private val summaries = mutableListOf<SummaryImpl>()
+    private val counters = Meters<CounterImpl>()
+    private val gauges = Meters<GaugeImpl>()
+    private val timers = Meters<TimerImpl>()
+    private val summaries = Meters<SummaryImpl>()
 
     override fun counter(name: String, tags: Map<String, String>): Counter =
-        counters.find { it.name == name && it.tags == tags } ?: CounterImpl(
-            name = name,
-            tags = tags
-        ).also { counters += it }
+        counters.getOrCreate(name, tags, ::CounterImpl)
 
     override fun gauge(name: String, tags: Map<String, String>): Gauge =
-        gauges.find { it.name == name && it.tags == tags } ?: GaugeImpl(name = name, tags = tags).also { gauges += it }
+        gauges.getOrCreate(name, tags, ::GaugeImpl)
 
     override fun timer(
         name: String,
         tags: Map<String, String>,
         config: TimerConfig
-    ): Timer =
-        timers.find { it.name == name && it.tags == tags } ?: TimerImpl(
-            name = name,
-            tags = tags,
-            timeSource = timeSource,
-            config = config
-        ).also { timers += it }
+    ): Timer = timers.getOrCreate(name, tags) { TimerImpl(it, timeSource, config) }
 
     override fun summary(name: String, tags: Map<String, String>): DistributionSummary =
-        summaries.find { it.name == name && it.tags == tags } ?: SummaryImpl(name, tags).also { summaries += it }
+        summaries.getOrCreate(name, tags, ::SummaryImpl)
 
     override fun snapshot(): MetricsSnapshot = MetricsSnapshot(
         buildList {
-            counters.forEach { add(it.point()) }
-            gauges.forEach { add(it.point()) }
-            timers.forEach { addAll(it.points()) }
-            summaries.forEach { add(it.point()) }
+            counters.registered().forEach { add(it.point()) }
+            gauges.registered().forEach { add(it.point()) }
+            timers.registered().forEach { addAll(it.points()) }
+            summaries.registered().forEach { add(it.point()) }
         }
     )
 
-    private class CounterImpl(val name: String, val tags: Map<String, String>) : Counter {
-        private val c = atomic(0L)
-        override fun inc(delta: Long) { c.getAndAdd(delta) }
-        fun point() = MetricPoint("counter", name, tags, count = c.value)
+    private data class MeterKey(val name: String, val tags: Map<String, String>)
+
+    private class Meters<T : Any> {
+        private val lock = SynchronizedObject()
+        private val meters = LinkedHashMap<MeterKey, T>()
+
+        fun getOrCreate(name: String, tags: Map<String, String>, create: (MeterKey) -> T): T =
+            synchronized(lock) {
+                meters[MeterKey(name, tags)] ?: run {
+                    val key = MeterKey(name, buildMap { putAll(tags) })
+                    create(key).also { meters[key] = it }
+                }
+            }
+
+        fun registered(): List<T> = synchronized(lock) { meters.values.toList() }
     }
 
-    private class GaugeImpl(val name: String, val tags: Map<String, String>) : Gauge {
-        private val v = atomic(0.0)
-        override fun set(value: Double) { v.value = value }
-        fun point() = MetricPoint("gauge", name, tags, value = v.value)
+    private class CounterImpl(private val key: MeterKey) : Counter {
+        private val count = atomic(0L)
+        override fun inc(delta: Long) { count.getAndAdd(delta) }
+        fun point() = MetricPoint("counter", key.name, key.tags, count = count.value)
+    }
+
+    private class GaugeImpl(private val key: MeterKey) : Gauge {
+        private val value = atomic(0.0)
+        override fun set(value: Double) { this.value.value = value }
+        fun point() = MetricPoint("gauge", key.name, key.tags, value = value.value)
     }
 
     private class TimerImpl(
-        val name: String,
-        val tags: Map<String, String>,
-        val timeSource: TimeSource,
+        private val key: MeterKey,
+        private val timeSource: TimeSource,
         config: TimerConfig
     ) : Timer {
-        private val percentiles = config.percentiles
-        private val slaDurations = config.sla
-        private val slaMs = slaDurations.map { it.toDouble(DurationUnit.MILLISECONDS) }
-        private val slaCounts = IntArray(slaDurations.size)
-        private val measurements = if (percentiles.isNotEmpty()) mutableListOf<Double>() else null
-
-        private val count = atomic(0L)
-        private val sumMs = atomic(0.0)
-        private val minMs = atomic(Double.POSITIVE_INFINITY)
-        private val maxMs = atomic(0.0)
+        private val lock = SynchronizedObject()
+        private val percentiles = config.percentiles.distinct()
+        private val sla = config.sla.distinct()
+        private val slaCounts = LongArray(sla.size)
+        private val recentSamples = if (percentiles.isNotEmpty()) DoubleArray(PERCENTILE_WINDOW_SIZE) else null
+        private val totals = Distribution()
 
         override suspend fun <T> record(block: suspend () -> T): T {
             val mark = timeSource.markNow()
@@ -88,15 +92,12 @@ class SimpleMeterRegistry(val timeSource: TimeSource = TimeSource.Monotonic) : I
         }
 
         override fun record(duration: Duration) {
-            count.incrementAndGet()
-            val d = duration.toDouble(DurationUnit.MILLISECONDS)
-            sumMs.getAndUpdate { it + d }
-            minMs.getAndUpdate { min(it, d) }
-            maxMs.getAndUpdate { max(it, d) }
-            measurements?.add(d)
-            if (slaMs.isNotEmpty()) {
-                slaMs.forEachIndexed { index, bound ->
-                    if (d <= bound) {
+            val milliseconds = duration.toDouble(DurationUnit.MILLISECONDS)
+            synchronized(lock) {
+                recentSamples?.let { it[(totals.count % it.size).toInt()] = milliseconds }
+                totals.record(milliseconds)
+                sla.forEachIndexed { index, bound ->
+                    if (duration <= bound) {
                         slaCounts[index]++
                     }
                 }
@@ -104,64 +105,55 @@ class SimpleMeterRegistry(val timeSource: TimeSource = TimeSource.Monotonic) : I
         }
 
         fun points(): List<MetricPoint> {
-            val base = MetricPoint(
-                "timer", name, tags,
-                count = count.value, sum = sumMs.value,
-                min = if (count.value > 0) minMs.value else 0.0,
-                max = maxMs.value
-            )
-            val extra = buildList {
-                if (measurements != null && measurements.isNotEmpty()) {
-                    val sorted = measurements.sorted()
-                    val size = sorted.size
-                    percentiles.forEach { p ->
-                        val rank = ceil(p * size).toInt().coerceIn(1, size) - 1
-                        val v = sorted[rank]
+            val (base, samples, counts) = synchronized(lock) {
+                val samples = recentSamples?.let { it.copyOf(minOf(totals.count, it.size.toLong()).toInt()) }
+                Triple(totals.point("timer", key), samples, slaCounts.copyOf())
+            }
+            return buildList {
+                add(base)
+                if (samples != null && samples.isNotEmpty()) {
+                    samples.sort()
+                    percentiles.forEach { percentile ->
+                        val rank = ceil(percentile * samples.size).toInt().coerceIn(1, samples.size) - 1
                         add(
                             MetricPoint(
-                                "timer",
-                                name,
-                                tags + ("percentile" to p.toString()),
-                                value = v
+                                "timer", key.name, key.tags + ("percentile" to percentile.toString()),
+                                value = samples[rank]
                             )
                         )
                     }
                 }
-                if (slaDurations.isNotEmpty()) {
-                    slaDurations.forEachIndexed { index, d ->
-                        add(
-                            MetricPoint(
-                                "timer",
-                                name,
-                                tags + ("sla" to d.inWholeMilliseconds.toString()),
-                                count = slaCounts[index].toLong()
-                            )
-                        )
-                    }
+                sla.forEachIndexed { index, duration ->
+                    val boundary = duration.toDouble(DurationUnit.MILLISECONDS).toString().removeSuffix(".0")
+                    add(MetricPoint("timer", key.name, key.tags + ("sla" to boundary), count = counts[index]))
                 }
             }
-            return listOf(base) + extra
         }
     }
 
-    private class SummaryImpl(val name: String, val tags: Map<String, String>) : DistributionSummary {
-        private val count = atomic(0L)
-        private val sum = atomic(0.0)
-        private val min = atomic(Double.POSITIVE_INFINITY)
-        private val max = atomic(0.0)
+    private class SummaryImpl(private val key: MeterKey) : DistributionSummary {
+        private val lock = SynchronizedObject()
+        private val totals = Distribution()
 
-        override fun record(amount: Double) {
-            count.incrementAndGet()
-            sum.getAndUpdate { it + amount }
-            min.getAndUpdate { min(it, amount) }
-            max.getAndUpdate { max(it, amount) }
+        override fun record(amount: Double) = synchronized(lock) { totals.record(amount) }
+        fun point() = synchronized(lock) { totals.point("summary", key) }
+    }
+
+    private class Distribution {
+        var count = 0L
+            private set
+        private var sum = 0.0
+        private var min = 0.0
+        private var max = 0.0
+
+        fun record(amount: Double) {
+            sum += amount
+            min = if (count == 0L) amount else minOf(min, amount)
+            max = if (count == 0L) amount else maxOf(max, amount)
+            count++
         }
 
-        fun point() = MetricPoint(
-            "summary", name, tags,
-            count = count.value, sum = sum.value,
-            min = if (count.value > 0) min.value else 0.0,
-            max = max.value
-        )
+        fun point(type: String, key: MeterKey) =
+            MetricPoint(type, key.name, key.tags, count = count, sum = sum, min = min, max = max)
     }
 }

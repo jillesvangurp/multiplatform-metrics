@@ -64,6 +64,11 @@ val readmeMd =
                   }
               }
               subSection("Timer percentiles and SLA") {
+                  +"""
+                      The simple registry calculates percentiles over the latest 1,024 observations per timer.
+                      Timer totals and SLA counts include all recorded observations.
+                      Reserve the `percentile` and `sla` tags for generated timer samples.
+                  """.trimIndent()
                   example {
                       val registry = SimpleMeterRegistry()
                       val timer = registry.timer(
@@ -80,6 +85,11 @@ val readmeMd =
                   }
               }
               subSection("OpenTelemetry JSON lines") {
+                  +"""
+                      Each line is an OTLP/HTTP JSON request for `/v1/metrics` with the snapshot's capture time.
+                      Timers report milliseconds and include their available quantiles. SLA counts are separate
+                      cumulative sums with a `.sla` suffix.
+                  """.trimIndent()
                   example {
                       val registry = SimpleMeterRegistry()
                       registry.counter("hits").inc()
@@ -96,7 +106,8 @@ val readmeMd =
                   example {
                       val registry = SimpleMeterRegistry()
                       registry.counter("hits").inc()
-                      println(registry.snapshot().toPrometheusLines().joinToString("\n"))
+                      val lines = registry.snapshot().toPrometheusLines()
+                      print(lines.joinToString("\n", postfix = "\n"))
                   }.let { out ->
                       +"""
                           Produces

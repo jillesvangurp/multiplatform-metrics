@@ -1,6 +1,7 @@
 package com.jillesvangurp.multiplatformmetrics
 
 import io.micrometer.core.instrument.MeterRegistry
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
@@ -8,6 +9,8 @@ import kotlinx.atomicfu.atomic
 
 /** [IMeterRegistry] backed by Micrometer on the JVM. */
 class MicrometerMeterRegistry(private val registry: MeterRegistry) : IMeterRegistry {
+    private val gauges = ConcurrentHashMap<Pair<String, Map<String, String>>, Gauge>()
+
     private fun tagArray(tags: Map<String, String>): Array<String> =
         tags.flatMap { listOf(it.key, it.value) }.toTypedArray()
 
@@ -20,17 +23,19 @@ class MicrometerMeterRegistry(private val registry: MeterRegistry) : IMeterRegis
         }
     }
 
-    override fun gauge(name: String, tags: Map<String, String>): Gauge {
-        val ref = atomic(0.0)
-        io.micrometer.core.instrument.Gauge.builder(name, ref) { it.value }
-            .tags(*tagArray(tags))
-            .register(registry)
-        return object : Gauge {
-            override fun set(value: Double) {
-                ref.value = value
+    override fun gauge(name: String, tags: Map<String, String>): Gauge =
+        gauges.computeIfAbsent(name to tags.toMap()) { (gaugeName, gaugeTags) ->
+            val ref = atomic(0.0)
+            io.micrometer.core.instrument.Gauge.builder(gaugeName, ref) { it.value }
+                .tags(*tagArray(gaugeTags))
+                .strongReference(true)
+                .register(registry)
+            object : Gauge {
+                override fun set(value: Double) {
+                    ref.value = value
+                }
             }
         }
-    }
 
     override fun timer(
         name: String,

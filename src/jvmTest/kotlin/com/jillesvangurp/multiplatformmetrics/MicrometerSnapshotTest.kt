@@ -12,6 +12,20 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 
 class MicrometerSnapshotTest {
     @Test
+    fun repeatedGaugeLookupsUpdateTheRegisteredValue() {
+        val micrometer = SimpleMeterRegistry()
+        val registry = MicrometerMeterRegistry(micrometer)
+        val tags = mutableMapOf("region" to "us", "sensor" to "outside")
+        registry.gauge("temperature", tags).set(10.0)
+        tags["sensor"] = "inside"
+        registry.gauge("temperature", tags).set(30.0)
+        registry.gauge("temperature", mapOf("sensor" to "outside", "region" to "us")).set(20.0)
+
+        micrometer.get("temperature").tag("sensor", "outside").gauge().value() shouldBe 20.0
+        micrometer.get("temperature").tag("sensor", "inside").gauge().value() shouldBe 30.0
+    }
+
+    @Test
     fun snapshotShouldHandleAllMeters() {
         val micrometer = SimpleMeterRegistry()
         val registry = MicrometerMeterRegistry(micrometer)
@@ -60,7 +74,8 @@ class MicrometerSnapshotTest {
         snapshot.points.first { it.name == "long.task.timer" }.count shouldBe 1
 
         val otLines = snapshot.toOpenTelemetryJsonLines()
-        expected.forEach { n -> otLines.any { "\"name\":\"$n\"" in it } shouldBe true }
+        val otlpNames = expected.dropLast(1) + listOf("long.task.timer.active", "long.task.timer.duration")
+        otlpNames.forEach { n -> otLines.any { "\"name\":\"$n\"" in it } shouldBe true }
 
         val promLines = snapshot.toPrometheusLines()
         fun sanitize(s: String) = s.replace('.', '_')
