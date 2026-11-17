@@ -2,17 +2,15 @@
 
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.api.tasks.testing.logging.TestLogEvent
-import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    kotlin("multiplatform")
-    kotlin("plugin.serialization")
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.kotlin.serialization)
     `maven-publish`
 }
 
-// FIXME adjust as needed
 val ghUser = "jillesvangurp"
 val ghProjectName = "multiplatform-metrics"
 
@@ -23,8 +21,6 @@ repositories {
             includeGroup("com.github.jillesvangurp")
         }
     }
-    // FIXME adjust as needed
-    // remove this if you don't use any of our multiplatform libraries
     maven("https://maven.tryformation.com/releases")
 }
 
@@ -34,13 +30,11 @@ java {
 }
 kotlin {
     jvm {
-        // should work for android as well
-        @OptIn(ExperimentalKotlinGradlePluginApi::class)
         compilerOptions {
             jvmTarget = JvmTarget.JVM_21
         }
     }
-    js(IR) {
+    js {
         nodejs {
             testTask {
                 useMocha {
@@ -58,75 +52,40 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
     iosX64()
-    iosSimulatorArm64()
     wasmJs {
         browser()
         nodejs()
         d8()
     }
-    // blocked on kotest assertions wasm release
-//    wasmWasi()
 
     sourceSets {
-
         commonMain {
             dependencies {
-                implementation(kotlin("stdlib-common"))
-                api(KotlinX.serialization.json)
-                api("com.jillesvangurp:kotlinx-serialization-extensions:_")
-                api("org.jetbrains.kotlinx:atomicfu:_")
+                api(libs.kotlinx.serialization.json)
+                api(libs.serialization.extensions)
+                api(libs.atomicfu)
             }
         }
 
-          commonTest {
-              dependencies {
-                  implementation(kotlin("test"))
-                  implementation(kotlin("test-common"))
-                  implementation(kotlin("test-annotations-common"))
-                  implementation("io.kotest:kotest-assertions-core:_")
-                  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:_")
-              }
-          }
-
-        jvmMain  {
+        commonTest {
             dependencies {
-                implementation(kotlin("stdlib-jdk8"))
-                api("io.micrometer:micrometer-core:_")
+                implementation(libs.kotlin.test)
+                implementation(libs.kotest.assertions.core)
+                implementation(libs.kotlinx.coroutines.test)
+            }
+        }
+        jvmMain {
+            dependencies {
+                api(libs.micrometer.core)
             }
         }
         jvmTest {
             dependencies {
-                implementation("ch.qos.logback:logback-classic:_")
-                implementation("com.github.jillesvangurp:kotlin4example:_")
-                implementation("org.junit.jupiter:junit-jupiter:_")
-                runtimeOnly("org.junit.platform:junit-platform-launcher")
+                runtimeOnly(libs.logback.classic)
+                implementation(libs.kotlin4example)
+                implementation(libs.junit.jupiter)
+                runtimeOnly(libs.junit.platform.launcher)
             }
-        }
-
-        jsMain  {
-            dependencies {
-                implementation(kotlin("stdlib-js"))
-            }
-        }
-
-        jsTest  {
-            dependencies {
-                implementation(kotlin("test-js"))
-            }
-        }
-
-        wasmJsTest {
-            dependencies {
-                implementation(kotlin("test-wasm-js"))
-            }
-        }
-
-        all {
-            languageSettings {
-                languageVersion = "2.0"
-                apiVersion = "2.0"
-            }
-            languageSettings.optIn("kotlin.RequiresOptIn")
         }
     }
 }
@@ -187,6 +146,7 @@ tasks.withType<Test> {
     // executes tests inside a class concurrently
     systemProperties["junit.jupiter.execution.parallel.mode.classes.default"] = "concurrent"
     systemProperties["junit.jupiter.execution.parallel.config.strategy"] = "dynamic"
+    systemProperties["junit.jupiter.execution.parallel.config.executor-service"] = "FORK_JOIN_POOL"
     // random order of test class execution
     systemProperties["junit.jupiter.testclass.order.default"] = "org.junit.jupiter.api.ClassOrderer\$Random"
 
@@ -198,35 +158,6 @@ tasks.withType<Test> {
         TestLogEvent.STANDARD_ERROR,
         TestLogEvent.STANDARD_OUT
     )
-    addTestListener(object : TestListener {
-        val failures = mutableListOf<String>()
-        override fun beforeSuite(desc: TestDescriptor) {
-        }
-
-        override fun afterSuite(desc: TestDescriptor, result: TestResult) {
-        }
-
-        override fun beforeTest(desc: TestDescriptor) {
-        }
-
-        override fun afterTest(desc: TestDescriptor, result: TestResult) {
-            if (result.resultType == TestResult.ResultType.FAILURE) {
-                val report =
-                    """
-                    TESTFAILURE ${desc.className} - ${desc.name}
-                    ${
-                        result.exception?.let { e ->
-                            """
-                            ${e::class.simpleName} ${e.message}
-                        """.trimIndent()
-                        }
-                    }
-                    -----------------
-                    """.trimIndent()
-                failures.add(report)
-            }
-        }
-    })
 }
 
 

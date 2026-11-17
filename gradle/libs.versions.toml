@@ -1,0 +1,28 @@
+[versions]
+atomicfu = "0.33.0"
+junit = "6.1.3"
+kotest = "6.2.7"
+kotlin = "2.4.21"
+kotlin4example = "1.1.9"
+kotlinx-coroutines = "1.11.0"
+kotlinx-serialization = "1.13.0"
+logback = "1.6.7"
+micrometer = "1.17.2"
+serialization-extensions = "1.2.1"
+
+[libraries]
+atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit" }
+kotest-assertions-core = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlin4example = { module = "com.github.jillesvangurp:kotlin4example", version.ref = "kotlin4example" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+micrometer-core = { module = "io.micrometer:micrometer-core", version.ref = "micrometer" }
+serialization-extensions = { module = "com.jillesvangurp:kotlinx-serialization-extensions", version.ref = "serialization-extensions" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
